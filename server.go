@@ -13,6 +13,14 @@ import (
 // new connections to the given handler.
 // Each request is handled in a separate goroutine.
 func ListenAndServe(addr, certFile, keyFile string, handler Handler) error {
+	return ListenAndServeWithLogs(addr, certFile, keyFile, handler, true)
+}
+
+// ListenAndServeWithLogs create a TCP server on the specified address and pass
+// new connections to the given handler.
+// Each request is handled in a separate goroutine.
+// Logging can be enabled or disabled using the logRequest parameter.
+func ListenAndServeWithLogs(addr, certFile, keyFile string, handler Handler, logRequest bool) error {
 	if addr == "" {
 		addr = "127.0.0.1:1965"
 	}
@@ -22,7 +30,7 @@ func ListenAndServe(addr, certFile, keyFile string, handler Handler) error {
 		return err
 	}
 
-	err = serve(listener, handler)
+	err = serve(listener, handler, logRequest)
 	if err != nil {
 		return err
 	}
@@ -54,20 +62,20 @@ func listen(addr, certFile, keyFile string) (net.Listener, error) {
 	return ln, nil
 }
 
-func serve(listener net.Listener, handler Handler) error {
+func serve(listener net.Listener, handler Handler, logRequest bool) error {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
 			continue
 		}
 		tlsConn := conn.(*tls.Conn)
-		go handleConnection(tlsConn, handler)
+		go handleConnection(tlsConn, handler, logRequest)
 	}
 }
 
-func handleConnection(conn *tls.Conn, handler Handler) {
+func handleConnection(conn *tls.Conn, handler Handler, logRequest bool) {
 	defer conn.Close()
-	request, err := getRequest(conn)
+	request, err := getRequest(conn, logRequest)
 	if err != nil {
 		return
 	}
@@ -76,7 +84,7 @@ func handleConnection(conn *tls.Conn, handler Handler) {
 	handler.ServeGemini(r, request)
 }
 
-func getRequest(conn *tls.Conn) (*Request, error) {
+func getRequest(conn *tls.Conn, logRequest bool) (*Request, error) {
 	headerBytes, err := readHeader(conn)
 	if err != nil {
 		return nil, err
@@ -86,7 +94,9 @@ func getRequest(conn *tls.Conn) (*Request, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode URL: %s, error: %v", header, err)
 	}
-	log.Printf("raw request: %s, decoded: %s", header, decodedHeader)
+	if logRequest {
+		log.Printf("raw request: %s, decoded: %s", header, decodedHeader)
+	}
 	r := &Request{}
 	return r, r.Reset(conn, decodedHeader)
 }
